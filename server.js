@@ -3,19 +3,25 @@ const express = require('express');
 const cors = require('cors');
 const cron = require("node-cron");
 const axios = require('axios');
+const path = require('path');
 
 const issueRoutes = require('./routes/issueRoutes');  
 const reportRoutes = require('./routes/reportRoutes'); 
 const summaryRoutes = require('./routes/summaryRoutes'); // 新增
+const commentRoutes = require('./routes/commentRoutes'); // 添加評論路由
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+// 靜態文件服務
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
 // 路由
 app.use('/api/issues', issueRoutes);
 app.use('/api/report', reportRoutes);
 app.use('/api/summaries', summaryRoutes);
+app.use('/api/comments', commentRoutes); // 添加評論路由
 
 // 每月 1 日執行月結
 cron.schedule("0 0 1 * *", async () => {
