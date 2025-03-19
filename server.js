@@ -3,16 +3,49 @@ const express = require('express');
 const cors = require('cors');
 const cron = require("node-cron");
 const axios = require('axios');
+const multer = require('multer');
 const path = require('path');
+const fs = require('fs');
 
 const issueRoutes = require('./routes/issueRoutes');  
 const reportRoutes = require('./routes/reportRoutes'); 
 const summaryRoutes = require('./routes/summaryRoutes'); // 新增
 const commentRoutes = require('./routes/commentRoutes'); // 添加評論路由
 
+// 確保上傳目錄存在
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// 配置文件上傳
+const storage = multer.diskStorage({
+  destination: function(req, file, cb) {
+    cb(null, uploadsDir);
+  },
+  filename: function(req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({ storage: storage });
+
 const app = express();
 app.use(cors());
-app.use(express.json());
+
+// 日誌中間件：記錄請求細節
+app.use((req, res, next) => {
+  console.log(`📝 ${new Date().toISOString()} - ${req.method} ${req.url}`);
+  if (req.method !== 'GET') {
+    console.log('請求體:', JSON.stringify(req.body, null, 2));
+  }
+  next();
+});
+
+// 解析 JSON 請求體，設置更大的限制，避免大型請求體解析錯誤
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // 靜態文件服務
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
@@ -22,6 +55,22 @@ app.use('/api/issues', issueRoutes);
 app.use('/api/report', reportRoutes);
 app.use('/api/summaries', summaryRoutes);
 app.use('/api/comments', commentRoutes); // 添加評論路由
+
+// 錯誤處理中間件
+app.use((err, req, res, next) => {
+  console.error('❌ 應用錯誤:', err.stack);
+  res.status(500).json({
+    error: '服務器內部錯誤',
+    message: err.message,
+    stack: process.env.NODE_ENV === 'production' ? '🔒' : err.stack
+  });
+});
+
+// 404 處理
+app.use((req, res) => {
+  console.log(`⚠️ 未找到路由: ${req.method} ${req.url}`);
+  res.status(404).json({ error: '未找到請求的資源' });
+});
 
 // 每月 1 日執行月結
 cron.schedule("0 0 1 * *", async () => {
@@ -38,4 +87,5 @@ cron.schedule("0 0 1 * *", async () => {
 // 啟動伺服器
 app.listen(5000, () => {
   console.log("🚀 伺服器運行於 http://localhost:5000");
+  console.log("�� 詳細的錯誤日誌已啟用");
 });

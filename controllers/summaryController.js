@@ -341,21 +341,58 @@ exports.getAnnualSummary = async (req, res) => {
  * /api/summaries/annualTrend?year=2025
  * 從 monthly_reports 讀已結束月份
  * 再結合當前 (monthly_summaries) 即時數據組成 1~12 月 (此處僅示範, 未必需要動)
- *
- * 如果 monthly_summaries / monthly_reports 結構也不同，請依照同樣概念調整。
  */
 exports.getAnnualTrend = async (req, res) => {
   try {
     const { year } = req.query;
     const targetYear = parseInt(year || new Date().getFullYear(), 10);
 
-    // 先撈 monthly_reports ...
-    // (如你有多表結構，也依照前面「對應欄位」的方式修正)
+    // 直接从issues表中获取年度数据
+    // 1) 获取每月的问题数量和解决数量
+    const [monthlyRows] = await db.query(
+      `SELECT 
+         MONTH(created_at) AS month,
+         COUNT(*) AS total,
+         SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) AS resolved
+       FROM issues
+       WHERE YEAR(created_at) = ?
+       GROUP BY MONTH(created_at)
+       ORDER BY MONTH(created_at)`,
+      [targetYear]
+    );
 
-    // ... (此處不貼示例, 因你可能還要改 monthly_reports)
-    // 回傳 annualData
+    // 2) 获取年度总计数据
+    const [totalRows] = await db.query(
+      `SELECT 
+         COUNT(*) AS totalCount,
+         SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) AS closedCount,
+         SUM(CASE WHEN status != 'Closed' THEN 1 ELSE 0 END) AS pendingCount
+       FROM issues
+       WHERE YEAR(created_at) = ?`,
+      [targetYear]
+    );
 
-    return res.json({ /* year, months: [...] */ });
+    const totalCount = totalRows[0]?.totalCount || 0;
+    const closedCount = totalRows[0]?.closedCount || 0;
+    const pendingCount = totalRows[0]?.pendingCount || 0;
+    const resolutionRate = totalCount > 0 ? Math.round((closedCount / totalCount) * 100) : 0;
+
+    // 3) 格式化结果
+    const monthlyStats = monthlyRows.map(row => ({
+      month: row.month,
+      total: row.total,
+      resolved: row.resolved,
+      pending: row.total - row.resolved
+    }));
+
+    return res.json({
+      year: targetYear,
+      months: monthlyStats,
+      totalCount,
+      closedCount,
+      pendingCount,
+      resolutionRate
+    });
   } catch (error) {
     console.error("getAnnualTrend error:", error);
     res.status(500).json({ error: error.message });
@@ -363,40 +400,59 @@ exports.getAnnualTrend = async (req, res) => {
 };
 
 exports.getImmediateAnnualTrend = async (req, res) => {
-    try {
-      const { year } = req.query;
-      const targetYear = parseInt(year || new Date().getFullYear(), 10);
-  
-      // 1) 直接從 issues 表，抓該年每月 Issue 數量
-      //    依 MONTH(created_at) 做 group by
-      const [rows] = await db.query(
-        `SELECT MONTH(created_at) AS monthNum, COUNT(*) AS count
-           FROM issues
-          WHERE YEAR(created_at) = ?
-          GROUP BY MONTH(created_at)
-          ORDER BY MONTH(created_at)`,
-        [targetYear]
-      );
-  
-      // 2) 組合成 12 筆 (1~12 月)
-      let months = Array.from({ length: 12 }, (_, i) => ({
-        month: i + 1,
-        issueCount: 0
-      }));
-  
-      // 3) 將查到的月份數量填入對應位置
-      rows.forEach(r => {
-        // r.monthNum = 1~12
-        months[r.monthNum - 1].issueCount = r.count;
-      });
-  
-      // 4) 回傳
-      res.json({
-        year: targetYear,
-        months
-      });
-    } catch (error) {
-      console.error("getImmediateAnnualTrend error:", error);
-      res.status(500).json({ error: error.message });
-    }
-  };
+  try {
+    const { year } = req.query;
+    const targetYear = parseInt(year || new Date().getFullYear(), 10);
+
+    // 1) 直接從 issues 表，抓該年每月 Issue 數量
+    //    依 MONTH(created_at) 做 group by
+    const [rows] = await db.query(
+      `SELECT 
+         MONTH(created_at) AS month,
+         COUNT(*) AS issueCount,
+         SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) AS resolved
+       FROM issues
+       WHERE YEAR(created_at) = ?
+       GROUP BY MONTH(created_at)
+       ORDER BY MONTH(created_at)`,
+      [targetYear]
+    );
+
+    // 2) 獲取年度總計數據
+    const [totalRows] = await db.query(
+      `SELECT 
+         COUNT(*) AS totalCount,
+         SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END) AS closedCount,
+         SUM(CASE WHEN status != 'Closed' THEN 1 ELSE 0 END) AS pendingCount
+       FROM issues
+       WHERE YEAR(created_at) = ?`,
+      [targetYear]
+    );
+
+    const totalCount = totalRows[0]?.totalCount || 0;
+    const closedCount = totalRows[0]?.closedCount || 0;
+    const pendingCount = totalRows[0]?.pendingCount || 0;
+    const resolutionRate = totalCount > 0 ? Math.round((closedCount / totalCount) * 100) : 0;
+
+    // 3) 組合成月份數據
+    const months = rows.map(r => ({
+      month: r.month,
+      issueCount: r.issueCount,
+      resolved: r.resolved,
+      pending: r.issueCount - r.resolved
+    }));
+
+    // 4) 回傳
+    res.json({
+      year: targetYear,
+      months,
+      totalCount,
+      closedCount,
+      pendingCount,
+      resolutionRate
+    });
+  } catch (error) {
+    console.error("getImmediateAnnualTrend error:", error);
+    res.status(500).json({ error: error.message });
+  }
+};
