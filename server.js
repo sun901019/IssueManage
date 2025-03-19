@@ -56,13 +56,49 @@ app.use('/api/report', reportRoutes);
 app.use('/api/summaries', summaryRoutes);
 app.use('/api/comments', commentRoutes); // 添加評論路由
 
-// 錯誤處理中間件
+// 增強的錯誤處理中間件
 app.use((err, req, res, next) => {
-  console.error('❌ 應用錯誤:', err.stack);
-  res.status(500).json({
-    error: '服務器內部錯誤',
+  // 詳細記錄錯誤
+  console.error('❌ 應用錯誤:', {
     message: err.message,
-    stack: process.env.NODE_ENV === 'production' ? '🔒' : err.stack
+    stack: err.stack,
+    url: req.url,
+    method: req.method,
+    body: req.body,
+    query: req.query,
+    params: req.params,
+    timestamp: new Date().toISOString()
+  });
+  
+  // 數據庫錯誤的詳細處理
+  let errorMessage = err.message;
+  let statusCode = 500;
+  
+  if (err.code) {
+    console.error('錯誤代碼:', err.code);
+    
+    // 增加特定數據庫錯誤處理
+    switch (err.code) {
+      case 'ER_NO_SUCH_TABLE':
+        errorMessage = '數據表不存在，可能需要初始化數據庫';
+        break;
+      case 'ER_BAD_FIELD_ERROR':
+        errorMessage = '數據表字段錯誤，可能表結構需要更新';
+        break;
+      case 'ER_ACCESS_DENIED_ERROR':
+        errorMessage = '數據庫訪問被拒絕，請檢查連接配置';
+        break;
+      case 'ECONNREFUSED':
+        errorMessage = '無法連接到數據庫服務器';
+        break;
+    }
+  }
+  
+  // 發送錯誤響應
+  res.status(statusCode).json({
+    error: errorMessage,
+    details: process.env.NODE_ENV === 'production' ? '詳情已記錄' : err.stack,
+    time: new Date().toISOString()
   });
 });
 

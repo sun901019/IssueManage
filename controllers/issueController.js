@@ -58,8 +58,7 @@ exports.addIssue = async (req, res) => {
       issue_type, 
       status, 
       created_at,
-      priority,
-      estimated_hours,
+      warranty_end_date,
       assigned_to
     } = req.body;
 
@@ -73,9 +72,9 @@ exports.addIssue = async (req, res) => {
     const sql = `
       INSERT INTO issues (
         title, description, source, issue_type, status, created_at,
-        priority, estimated_hours, assigned_to
+        warranty_end_date, assigned_to
       ) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
     const createdValue = created_at || null;  // 如果前端沒傳 `created_at`，設為 null
@@ -87,8 +86,7 @@ exports.addIssue = async (req, res) => {
       issue_type || null, 
       status, 
       createdValue,
-      priority || '中',
-      estimated_hours || null,
+      warranty_end_date || null,
       assigned_to || null
     ]);
 
@@ -100,8 +98,7 @@ exports.addIssue = async (req, res) => {
       issue_type,
       status,
       created_at: createdValue,
-      priority,
-      estimated_hours,
+      warranty_end_date,
       assigned_to
     });
   } catch (error) {
@@ -138,8 +135,7 @@ exports.updateIssue = async (req, res) => {
       source, 
       issue_type, 
       status,
-      priority,
-      estimated_hours,
+      warranty_end_date,
       assigned_to
     } = req.body;
     
@@ -158,8 +154,7 @@ exports.updateIssue = async (req, res) => {
           source = ?, 
           issue_type = ?, 
           status = ?, 
-          priority = ?,
-          estimated_hours = ?,
+          warranty_end_date = ?,
           assigned_to = ?,
           updated_at = NOW() 
       WHERE id = ?
@@ -171,8 +166,7 @@ exports.updateIssue = async (req, res) => {
       source, 
       issue_type || null, 
       status,
-      priority || '中',
-      estimated_hours || null,
+      warranty_end_date || null,
       assigned_to || null,
       id
     ]);

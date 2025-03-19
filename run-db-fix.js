@@ -18,72 +18,74 @@ const dbConfig = {
 };
 
 // 修復數據庫結構
-async function fixDatabaseStructure() {
-  console.log('嘗試修復數據庫結構...');
+async function updateDatabaseStructure() {
+  console.log('開始更新數據庫結構...');
   
+  // 創建數據庫連接
+  const connection = await mysql.createConnection({
+    host: process.env.DB_HOST || 'localhost',
+    user: process.env.DB_USER || 'root',
+    password: process.env.DB_PASSWORD || '',
+    database: process.env.DB_NAME || 'issue_management',
+    multipleStatements: true // 允許多條SQL語句
+  });
+
   try {
-    const connection = await mysql.createConnection(dbConfig);
-    console.log('✅ 成功連接到數據庫');
+    console.log('連接到數據庫成功');
     
-    // 執行修復SQL
-    const fixSqlPath = path.join(__dirname, 'db', 'fix_issues_table.sql');
+    // 讀取SQL文件
+    const sqlFile = fs.readFileSync('./db/update_issues_structure.sql', 'utf8');
+    console.log('讀取SQL文件成功');
     
-    if (fs.existsSync(fixSqlPath)) {
-      console.log('執行issues表結構修復...');
-      const fixSQL = fs.readFileSync(fixSqlPath, 'utf8');
-      
-      // 分割SQL語句
-      const queries = fixSQL
-        .split(';')
-        .filter(query => query.trim() !== '')
-        .map(query => query.trim() + ';');
-      
-      for (const query of queries) {
-        if (query.trim().startsWith('--')) continue; // 跳過註釋
-        if (query.trim() === ';') continue; // 跳過空語句
-        
-        try {
-          console.log(`執行: ${query.substring(0, 80)}${query.length > 80 ? '...' : ''}`);
-          await connection.query(query);
-        } catch (err) {
-          console.warn(`⚠️ 警告: SQL執行失敗: ${err.message}`);
-          console.warn('問題SQL:', query);
-          // 繼續執行下一條語句
-        }
-      }
-      
-      // 驗證欄位是否已添加
-      const [columns] = await connection.query(`
-        SELECT 
-          COLUMN_NAME, 
-          DATA_TYPE, 
-          COLUMN_DEFAULT, 
-          IS_NULLABLE
-        FROM 
-          information_schema.COLUMNS 
-        WHERE 
-          TABLE_SCHEMA = '${process.env.DB_NAME}' 
-          AND TABLE_NAME = 'issues'
-      `);
-      
-      console.log('\n數據庫結構驗證:');
-      columns.forEach(col => {
-        console.log(`- ${col.COLUMN_NAME}: ${col.DATA_TYPE}${col.COLUMN_DEFAULT ? ' [默認:' + col.COLUMN_DEFAULT + ']' : ''}`);
-      });
-      
-      console.log('\n✅ 數據庫結構修復完成');
+    // 執行SQL命令
+    console.log('開始執行SQL命令...');
+    const [results] = await connection.query(sqlFile);
+    console.log('SQL命令執行成功');
+    
+    // 驗證表結構
+    const [tableInfo] = await connection.query(`
+      SELECT COLUMN_NAME, DATA_TYPE, COLUMN_COMMENT 
+      FROM INFORMATION_SCHEMA.COLUMNS 
+      WHERE TABLE_SCHEMA = DATABASE() 
+      AND TABLE_NAME = 'issues'
+      ORDER BY ORDINAL_POSITION
+    `);
+    
+    console.log('issues表結構:');
+    console.table(tableInfo.map(col => ({
+      字段名: col.COLUMN_NAME,
+      數據類型: col.DATA_TYPE,
+      注釋: col.COLUMN_COMMENT
+    })));
+
+    // 檢查關鍵列
+    const hasWarrantyEndDate = tableInfo.some(col => col.COLUMN_NAME === 'warranty_end_date');
+    const hasPriority = tableInfo.some(col => col.COLUMN_NAME === 'priority');
+    const hasEstimatedHours = tableInfo.some(col => col.COLUMN_NAME === 'estimated_hours');
+    
+    if (hasWarrantyEndDate && !hasPriority && !hasEstimatedHours) {
+      console.log('✅ 表結構更新成功：');
+      console.log('  ✓ 已添加 warranty_end_date 列');
+      console.log('  ✓ 已移除 priority 列');
+      console.log('  ✓ 已移除 estimated_hours 列');
     } else {
-      console.error('❌ 找不到修復SQL文件!');
+      console.log('⚠️ 表結構更新不完整：');
+      console.log(`  ${hasWarrantyEndDate ? '✓' : '✗'} warranty_end_date 列`);
+      console.log(`  ${!hasPriority ? '✓' : '✗'} 移除 priority 列`);
+      console.log(`  ${!hasEstimatedHours ? '✓' : '✗'} 移除 estimated_hours 列`);
     }
     
+    console.log('數據庫結構更新完成!');
+    console.log('請重新啟動後端服務器以應用這些更改');
+  } catch (error) {
+    console.error('執行SQL時出錯:', error);
+  } finally {
     await connection.end();
-  } catch (err) {
-    console.error('❌ 數據庫修復失敗:', err);
   }
 }
 
 // 執行修復
-fixDatabaseStructure()
+updateDatabaseStructure()
   .then(() => {
     console.log('數據庫修復腳本執行完畢');
     console.log('請重新啟動後端服務器以應用這些更改');

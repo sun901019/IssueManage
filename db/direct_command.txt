@@ -1,0 +1,5 @@
+-- 直接添加warranty_end_date列（适用于所有MySQL版本）
+ALTER TABLE issues ADD COLUMN warranty_end_date DATE DEFAULT NULL COMMENT '保固到期日';
+
+-- 如果上面的命令报错说列已存在，请尝试下面的命令
+-- ALTER TABLE issues MODIFY COLUMN warranty_end_date DATE DEFAULT NULL COMMENT '保固到期日'; 
